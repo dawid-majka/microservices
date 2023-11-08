@@ -31,7 +31,7 @@ async fn main() {
         let transaction = generate_transaction();
 
         if let Err(e) = produce_event(&transaction, topic).await {
-            eprintln!("Error producing transaction");
+            eprintln!("Error producing transaction: {}", e);
         }
 
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -60,6 +60,8 @@ async fn produce_event(
     transaction: &Transaction,
     topic: &str,
 ) -> Result<(), rdkafka::error::KafkaError> {
+    //TODO: We create client for each produce event,
+    // Should be created once
     let producer: FutureProducer = ClientConfig::new()
         .set("bootstrap.servers", "localhost:29092")
         .create()
@@ -76,7 +78,7 @@ async fn produce_event(
         )
         .await;
 
-    println!("Send event status: {:?}", status);
+    println!("Send event status: {:?}, payload: {}", status, payload);
 
     Ok(())
 }

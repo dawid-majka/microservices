@@ -1,0 +1,22 @@
+version: '3.7'
+services:
+  couchbase:
+    image: couchbase:community-7.0.0
+    container_name: couchbase_server
+    ports:
+      - "8091-8094:8091-8094"
+      - "11210:11210"
+    environment:
+      - CLUSTER_RAMSIZE=1024
+      - CLUSTER_INDEX_RAMSIZE=256
+      - CLUSTER_FTS_RAMSIZE=256
+      - CLUSTER_EVENTING_RAMSIZE=256
+      - CLUSTER_ANALYTICS_RAMSIZE=1024
+      - CLUSTER_USERNAME=Administrator
+      - CLUSTER_PASSWORD=password
+    networks:
+      - couchbase_network
+
+networks:
+  couchbase_network:
+    driver: bridge
