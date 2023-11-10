@@ -25,7 +25,7 @@ async fn spawn_app() -> String {
         .await
         .expect("Server initialization failed.");
 
-    let _ = tokio::spawn(server);
+    tokio::spawn(server);
 
     format!("http://127.0.0.1:{}", port)
 }

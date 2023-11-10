@@ -1,11 +1,9 @@
-use couchbase::{Cluster, QueryOptions};
-use futures::stream::StreamExt;
+use couchbase::Cluster;
 use rdkafka::{
     consumer::{CommitMode, Consumer, StreamConsumer},
     ClientConfig, Message,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Transaction {

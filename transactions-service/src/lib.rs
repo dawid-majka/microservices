@@ -1,9 +1,11 @@
-use std::{net::TcpListener, sync::Arc};
+use std::net::TcpListener;
 
 use actix_web::{dev::Server, get, web, App, HttpResponse, HttpServer, Responder};
 use couchbase::{Cluster, CreatePrimaryQueryIndexOptions, GetAllQueryIndexOptions, QueryOptions};
 use futures::stream::StreamExt;
 use serde_json::Value;
+
+pub mod configuration;
 
 #[get("/")]
 async fn hello() -> impl Responder {
@@ -11,7 +13,7 @@ async fn hello() -> impl Responder {
 }
 
 #[get("/transaction")]
-async fn transactions(cluster: web::Data<Arc<Cluster>>) -> impl Responder {
+async fn transactions(cluster: web::Data<Cluster>) -> impl Responder {
     let result = cluster
         .query("SELECT * FROM `transactions`", QueryOptions::default())
         .await;
@@ -39,14 +41,12 @@ async fn transactions(cluster: web::Data<Arc<Cluster>>) -> impl Responder {
 pub async fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
     let cluster = Cluster::connect("couchbase://localhost:8091", "Administrator", "password");
 
-    //TODO: Should be done when creating db
-    manage_db_indexing(&cluster).await;
 
-    let cluster = Arc::new(cluster);
+    let cluster = web::Data::new(cluster);
 
     let server = HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(cluster.clone()))
+            .app_data(cluster.clone())
             .service(transactions)
             .service(hello)
     })
@@ -54,34 +54,4 @@ pub async fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
     .run();
 
     Ok(server)
-}
-
-async fn manage_db_indexing(cluster: &Cluster) {
-    let index_manager = cluster.query_indexes();
-
-    match index_manager
-        .get_all_indexes("transactions", GetAllQueryIndexOptions::default())
-        .await
-    {
-        Ok(results) => {
-            if !results.into_iter().any(|index| index.is_primary()) {
-                match index_manager
-                    .create_primary_index(
-                        "transactions",
-                        CreatePrimaryQueryIndexOptions::default().index_name("transactions_id"),
-                    )
-                    .await
-                {
-                    Ok(_result) => {
-                        println!("primary index created");
-                    }
-                    Err(e) => println!("got error! {}", e),
-                }
-            }
-        }
-
-        Err(e) => {
-            println!("got error! {}", e)
-        }
-    };
 }
