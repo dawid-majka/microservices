@@ -5,3 +5,8 @@ database:
   username: "Administrator"
   password: "password"
   bucket_name: "transactions"
+  scope_name: "transactions"
+  collection_name: "transactions"
+  test_bucket_name: "test_data"
+  test_scope_name: "test_data"
+  test_collection_name: "test_data"

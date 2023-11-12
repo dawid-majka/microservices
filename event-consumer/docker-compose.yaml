@@ -14,6 +14,8 @@ services:
       - CLUSTER_ANALYTICS_RAMSIZE=1024
       - CLUSTER_USERNAME=Administrator
       - CLUSTER_PASSWORD=password
+    volumes:
+      - ./scripts/init_db.sh:/opt/init_db.sh 
     networks:
       - couchbase_network
 

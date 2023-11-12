@@ -24,10 +24,11 @@ enum TransactionType {
 #[tokio::main]
 async fn main() {
     let cluster = Cluster::connect("couchbase://localhost:8091", "Administrator", "password");
-    let bucket = cluster.bucket("transactions");
-    let collection = bucket.default_collection();
 
-    let topic = "transactions";
+    let transactions_str = "transactions";
+
+    let bucket = cluster.bucket(transactions_str);
+    let collection = bucket.scope(transactions_str).collection(transactions_str);
 
     let consumer: StreamConsumer = ClientConfig::new()
         .set("group.id", "transaction_group")
@@ -37,7 +38,7 @@ async fn main() {
         .expect("Consumer creation failed");
 
     consumer
-        .subscribe(&[topic])
+        .subscribe(&[transactions_str])
         .expect("Topic subscription failed");
 
     loop {
