@@ -5,3 +5,18 @@ GET http://localhost:8080/ HTTP/1.1
 GET http://localhost:8080/transactions HTTP/1.1
 
 ###
+
+GET http://localhost:8080/transactions/bet HTTP/1.1
+
+###
+
+GET http://localhost:8080/transactions/trade HTTP/1.1
+
+###
+
+GET http://localhost:8080/transactions/deposit HTTP/1.1
+
+###
+
+GET http://localhost:8080/transactions/withdrawal HTTP/1.1
+

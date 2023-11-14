@@ -1,34 +1,31 @@
-use couchbase::Cluster;
+use actors::{batch::BatchActor, messages::BatchMessage, state::StateActor};
 use rdkafka::{
     consumer::{CommitMode, Consumer, StreamConsumer},
     ClientConfig, Message,
 };
-use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Transaction {
-    pub id: u64,
-    pub user_id: u64,
-    pub amount: f64,
-    pub transaction_type: TransactionType,
-}
+use crate::{actors::messages::StateMessage, model::Transaction};
 
-#[derive(Debug, Serialize, Deserialize)]
-enum TransactionType {
-    Bet,
-    Trade,
-    Deposit,
-    Withdrawal,
-}
+mod actors;
+mod model;
 
 #[tokio::main]
 async fn main() {
-    let cluster = Cluster::connect("couchbase://localhost:8091", "Administrator", "password");
+    let (state_tx, state_rx) = mpsc::channel::<StateMessage>(1);
+    let (batch_tx, batch_rx) = mpsc::channel::<BatchMessage>(1);
+
+    tokio::spawn(async move {
+        let state_actor = StateActor::new(state_rx, batch_tx);
+        state_actor.run().await;
+    });
+
+    tokio::spawn(async move {
+        let batch_actor = BatchActor::new(batch_rx);
+        batch_actor.run().await;
+    });
 
     let transactions_str = "transactions";
-
-    let bucket = cluster.bucket(transactions_str);
-    let collection = bucket.scope(transactions_str).collection(transactions_str);
 
     let consumer: StreamConsumer = ClientConfig::new()
         .set("group.id", "transaction_group")
@@ -40,6 +37,8 @@ async fn main() {
     consumer
         .subscribe(&[transactions_str])
         .expect("Topic subscription failed");
+
+    println!("Waiting for messages");
 
     loop {
         match consumer.recv().await {
@@ -57,21 +56,11 @@ async fn main() {
                     serde_json::from_str(payload).expect("Error deserializing the message");
                 println!("Received transaction: {:?}", transaction);
 
-                collection
-                    .upsert(transaction.id.to_string(), &transaction, None)
-                    .await
-                    .expect("Error upserting transaction");
+                let state_message = StateMessage {
+                    single_data: transaction,
+                };
 
-                println!("Transaction inserted");
-
-                match collection.get(transaction.id.to_string(), None).await {
-                    Ok(db_transaction) => {
-                        println!("Transaction from db: {:?}", db_transaction);
-                    }
-                    Err(e) => {
-                        println!("Get error: {:?}", e)
-                    }
-                }
+                state_tx.send(state_message).await.unwrap();
 
                 consumer
                     .commit_message(&message, CommitMode::Async)

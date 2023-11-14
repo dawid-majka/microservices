@@ -49,8 +49,8 @@ fn generate_transaction() -> Transaction {
     };
 
     Transaction {
-        id: rng.gen(),
-        user_id: rng.gen(),
+        id: rng.gen_range(1..1000000000),
+        user_id: rng.gen_range(1..1000000000),
         amount: rng.gen_range(1.0..1000.0),
         transaction_type,
     }

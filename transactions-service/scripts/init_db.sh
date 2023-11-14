@@ -15,9 +15,10 @@ CB_USERNAME="Administrator"
 CB_PASSWORD="password"
 BUCKET_NAME="transactions"
 SCOPE_NAME="transactions"
-COLLECTION_NAME="transactions"
 TEST_BUCKET_NAME="test_data"
 TEST_SCOPE_NAME="test_data"
+
+declare -a types=("bet" "withdrawal" "deposit" "trade")
 
 # Function to wait for Couchbase to be ready
 wait_for_couchbase() {
@@ -95,27 +96,33 @@ else
     echo "Scope ${SCOPE_NAME} created in ${BUCKET_NAME}"
 fi
 
-# Check if transactions collection exists
-if cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "SELECT * FROM system:keyspaces WHERE name='${COLLECTION_NAME}' AND scope_id='${SCOPE_NAME}';" | grep -q '${COLLECTION_NAME}'; then
-    echo "Collection ${COLLECTION_NAME} already exists in scope ${SCOPE_NAME}"
-else
-    # Create collection
-    cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "CREATE COLLECTION \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`${COLLECTION_NAME}\`;"
-    echo "Collection ${COLLECTION_NAME} created in scope ${SCOPE_NAME}"
-fi
-
-# Check if test scope exists
-if cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "SELECT * FROM system:keyspaces WHERE name='${TEST_SCOPE_NAME}' AND bucket_id='${TEST_BUCKET_NAME}';" | grep -q '${TEST_SCOPE_NAME}'; then
-    echo "Scope ${TEST_SCOPE_NAME} already exists in ${TEST_BUCKET_NAME}"
-else
-    # Create scope
-    cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "CREATE SCOPE \`${TEST_BUCKET_NAME}\`.\`${TEST_SCOPE_NAME}\`;"
-    echo "Scope ${TEST_SCOPE_NAME} created in ${TEST_BUCKET_NAME}"
-fi
+# Check and create collections for transactions types
+for type in "${types[@]}"
+do
+    echo "Checking if collection ${type} exists..."
+    if cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "SELECT * FROM system:keyspaces WHERE name='${type}' AND scope_id='${SCOPE_NAME}';" | grep -q '${type}'; then
+        echo "Collection ${type} already exists in scope ${SCOPE_NAME}"
+    else
+        echo "Creating collection ${type}..."
+        cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} \
+            -e http://localhost:8091 \
+            -q -s "CREATE COLLECTION \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`${type}\`;"
+        echo "Collection ${type} created in scope ${SCOPE_NAME}"
+    fi
+done
 
 # Check if the primary index already exists
-INDEX_EXISTS=$(cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "SELECT COUNT(*) AS count FROM system:indexes WHERE keyspace_id='${BUCKET_NAME}' AND is_primary=true;")
-if ! echo "$INDEX_EXISTS" | grep -o '"count": 1' > /dev/null; then
-    cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} \
-        -s "CREATE PRIMARY INDEX ON \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`${COLLECTION_NAME}\` USING GSI;"
-fi
+for type in "${types[@]}"
+do
+    echo "Checking if primary index exists on collection ${type}..."
+    INDEX_EXISTS=$(cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} -e http://localhost:8091 -q -s "SELECT COUNT(*) AS count FROM system:indexes WHERE keyspace_id='${BUCKET_NAME}' AND is_primary=true AND scope_id='${SCOPE_NAME}' AND keyspace_id='${type}';")
+    if ! echo "$INDEX_EXISTS" | grep -o '"count": 1' > /dev/null; then
+        echo "Creating primary index on collection ${type}..."
+        cbq -u ${CB_USERNAME} -p ${CB_PASSWORD} \
+            -e http://localhost:8091 \
+            -q -s "CREATE PRIMARY INDEX ON \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`${type}\` USING GSI;"
+        echo "Primary index created on collection ${type}"
+    else
+        echo "Primary index already exists on collection ${type}"
+    fi
+done

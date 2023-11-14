@@ -2,7 +2,7 @@ use std::{net::TcpListener, time::Duration};
 
 use couchbase::{
     Collection, CollectionSpec, CreateCollectionOptions, CreatePrimaryQueryIndexOptions,
-    DropCollectionOptions, GetAllQueryIndexOptions, UpsertOptions,
+    CreateScopeOptions, DropScopeOptions, GetAllQueryIndexOptions, Scope, UpsertOptions,
 };
 use once_cell::sync::Lazy;
 use rand::Rng;
@@ -52,14 +52,20 @@ async fn servers_is_working() {
 #[actix_web::test]
 async fn get_transactions_returns_empty_json_when_no_rows() {
     // Given
-    let app_data = spawn_app("test".to_string()).await;
     let client = reqwest::Client::new();
-    create_collection(&app_data.connection_data).await;
-    manage_db_indexing(&app_data.connection_data).await;
+    let app_data = spawn_app("test".to_string()).await;
+    let mut con = app_data.connection_data;
+    create_scope(&con).await;
+    con.collection_name = "withdrawal".to_string();
+    create_collection(&con).await;
+    manage_db_indexing(&con).await;
 
     // When
     let response = client
-        .get(&format!("{}/transactions", &app_data.address))
+        .get(&format!(
+            "{}/transactions/{}",
+            &app_data.address, con.collection_name
+        ))
         .send()
         .await
         .expect("Failed to execute request.");
@@ -67,21 +73,23 @@ async fn get_transactions_returns_empty_json_when_no_rows() {
     // Then
     assert_eq!(200, response.status().as_u16());
 
-    drop_collection(&app_data.connection_data).await;
+    drop_scope(&con).await
 }
 
 #[actix_web::test]
-async fn get_transactions_returns_a_transactions_from_db() {
+async fn get_transactions_by_type_returns_a_transactions_from_db() {
     // Given
     let mut rng = rand::thread_rng();
     let test_id: u32 = rng.gen();
-    let collection_name = format!("{}test", test_id);
+    let scope_name = format!("{}test", test_id);
 
-    let app_data = spawn_app(collection_name.clone()).await;
-    let con = app_data.connection_data;
+    let app_data = spawn_app(scope_name.clone()).await;
+    let mut con = app_data.connection_data;
 
     let client = reqwest::Client::new();
 
+    create_scope(&con).await;
+    con.collection_name = "withdrawal".to_string();
     let collection = create_collection(&con).await;
     sleep(Duration::from_secs(5)).await;
 
@@ -102,7 +110,10 @@ async fn get_transactions_returns_a_transactions_from_db() {
 
     // When
     let response = client
-        .get(&format!("{}/transactions", &app_data.address))
+        .get(&format!(
+            "{}/transactions/{}",
+            &app_data.address, con.collection_name
+        ))
         .send()
         .await
         .expect("Failed to execute request.");
@@ -117,10 +128,10 @@ async fn get_transactions_returns_a_transactions_from_db() {
 
     assert_eq!(1, response_body.len());
 
-    drop_collection(&con).await;
+    drop_scope(&con).await;
 }
 
-async fn spawn_app(collection_name: String) -> TestApp {
+async fn spawn_app(scope_name: String) -> TestApp {
     Lazy::force(&TRACING);
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind to random port");
@@ -130,7 +141,7 @@ async fn spawn_app(collection_name: String) -> TestApp {
     let configuration = get_configuration().expect("Failed to read configuration.");
 
     let mut connection_data = CouchbaseConnection::test_connection(&configuration);
-    connection_data.collection_name = collection_name;
+    connection_data.scope_name = scope_name;
 
     let server = transactions_service::run(listener, connection_data.clone())
         .await
@@ -170,26 +181,36 @@ async fn create_collection(con: &CouchbaseConnection) -> Collection {
         .collection(&con.collection_name)
 }
 
-async fn drop_collection(con: &CouchbaseConnection) {
+async fn create_scope(con: &CouchbaseConnection) -> Scope {
     let bucket = con.cluster.bucket(&con.bucket_name);
     let mgr = bucket.collections();
 
     match mgr
-        .drop_collection(
-            CollectionSpec::new(
-                &con.collection_name,
-                &con.scope_name,
-                Duration::from_secs(0),
-            ),
-            DropCollectionOptions::default(),
-        )
+        .create_scope(&con.scope_name, CreateScopeOptions::default())
+        .await
+    {
+        Ok(_result) => {
+            tracing::debug!("Scope created");
+        }
+        Err(e) => tracing::debug!("Create scope error: {}", e),
+    }
+
+    bucket.scope(&con.scope_name)
+}
+
+async fn drop_scope(con: &CouchbaseConnection) {
+    let bucket = con.cluster.bucket(&con.bucket_name);
+    let mgr = bucket.collections();
+
+    match mgr
+        .drop_scope(&con.scope_name, DropScopeOptions::default())
         .await
     {
         Ok(_) => {
-            tracing::debug!("{} collection deleted", &con.collection_name);
+            tracing::debug!("{} scope deleted", &con.collection_name);
         }
         Err(e) => {
-            tracing::error!("Error deleting collection: {:?}", e)
+            tracing::error!("Error deleting scope: {:?}", e)
         }
     }
 }
